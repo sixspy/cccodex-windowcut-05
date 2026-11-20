@@ -25,6 +25,7 @@ createApp({
     const lateItems = ref([]);
     const lateSummary = ref({});
     const audits = ref([]);
+    const rejects = ref([]);
     const contention = ref([]);
     const locks = ref([]);
     const holds = ref([]);
@@ -100,6 +101,9 @@ createApp({
       const au = await api.get("/api/audit?limit=50");
       if (au === null) return;
       audits.value = Array.isArray(au.body.items) ? au.body.items : [];
+      const rj = await api.get("/api/rejects");
+      if (rj === null) return;
+      rejects.value = Array.isArray(rj.body.items) ? rj.body.items : [];
       const ct = await api.get("/api/contention");
       if (ct === null) return;
       contention.value = Array.isArray(ct.body.items) ? ct.body.items : [];
@@ -205,6 +209,7 @@ createApp({
       lateItems,
       lateSummary,
       audits,
+      rejects,
       contention,
       locks,
       holds,

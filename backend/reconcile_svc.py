@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from auth import AuthHeader, require_user
-from db import connect
+from db import connect, repair_reject_orphans
 
 router = APIRouter(tags=["reconcile"])
 
@@ -69,6 +69,10 @@ def reconcile_all(authorization: AuthHeader = None):
                 "SELECT COUNT(*) c FROM late_bucket WHERE window_name=?",
                 (w["name"],),
             ).fetchone()["c"]
+            rejects = conn.execute(
+                "SELECT COUNT(*) c FROM reject_slips WHERE window_name=?",
+                (w["name"],),
+            ).fetchone()["c"]
             aligned = (
                 bool(mat)
                 and mat["row_count"] == ev["c"]
@@ -82,6 +86,17 @@ def reconcile_all(authorization: AuthHeader = None):
                     "aligned": aligned,
                     "window_events": ev["c"],
                     "late_bucket": late,
+                    "rejects": rejects,
                 }
             )
         return {"items": items}
+
+
+@router.post("/api/reconcile/repair-orphans")
+def repair_orphans(authorization: AuthHeader = None):
+    """对账写路径：修复拒收孤儿（事件有凭证无 → 补出示 + 删脏行）。"""
+    user = require_user(authorization)
+    with connect() as conn:
+        repaired = repair_reject_orphans(conn, actor=user)
+        conn.commit()
+    return {"ok": True, "repaired_events": repaired}

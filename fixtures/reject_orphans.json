@@ -1,0 +1,24 @@
+{
+  "comment": "窗外拒收不一致复现夹具：orphan_events=窗外开启却无凭证（事件有凭证无）；orphan_slips=凭证有事件无。events 表无 window_name 列，窗口归属只能放在夹具元数据里——这正是病灶。",
+  "orphan_events": [
+    {
+      "window_id": null,
+      "window_name": "W-1102",
+      "biz_key": "ORPH-EVT",
+      "event_ts": "2026-10-15T08:00:00",
+      "amount": 2.0,
+      "disposition": "拒收",
+      "created_at": "2026-11-02T09:00:00"
+    }
+  ],
+  "orphan_slips": [
+    {
+      "window_name": "W-1102",
+      "biz_key": "ORPH-SLIP",
+      "event_ts": "2026-10-16T08:00:00",
+      "amount": 3.0,
+      "reason": "窗外且窗仍开启",
+      "created_at": "2026-11-02T09:05:00"
+    }
+  ]
+}

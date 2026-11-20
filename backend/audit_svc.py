@@ -31,6 +31,46 @@ def audit_actions(authorization: AuthHeader = None):
         return {"items": [dict(r) for r in rows]}
 
 
+@router.get("/api/audit/reject-consistency")
+def reject_consistency(authorization: AuthHeader = None):
+    """窗外拒收五处同态核验：凭证 / 事件列表 / 窗口条带 / 对账计数 / 审计。"""
+    require_user(authorization)
+    with connect() as conn:
+        slips = conn.execute("SELECT COUNT(*) c FROM reject_slips").fetchone()["c"]
+        dirty = conn.execute(
+            "SELECT COUNT(*) c FROM events WHERE disposition='拒收'"
+        ).fetchone()["c"]
+        band = conn.execute(
+            """SELECT COALESCE(SUM(cnt),0) s FROM (
+                 SELECT COUNT(*) cnt FROM reject_slips rs
+                 JOIN windows w ON w.name = rs.window_name
+                 GROUP BY w.name
+               )"""
+        ).fetchone()["s"]
+        recon = conn.execute(
+            "SELECT COUNT(*) c FROM reject_slips WHERE window_name IN (SELECT name FROM windows)"
+        ).fetchone()["c"]
+        audit_n = conn.execute(
+            "SELECT COUNT(*) c FROM audit_trail WHERE action='ingest_reject'"
+        ).fetchone()["c"]
+        drafts = {
+            r["status"]: r["c"]
+            for r in conn.execute(
+                "SELECT status, COUNT(*) c FROM reject_drafts GROUP BY status"
+            ).fetchall()
+        }
+        consistent = dirty == 0 and slips == band == recon == audit_n
+        return {
+            "slips": slips,
+            "dirty_events": dirty,
+            "window_band_total": band,
+            "reconcile_total": recon,
+            "audit_presentations": audit_n,
+            "drafts": drafts,
+            "consistent": consistent,
+        }
+
+
 @router.get("/api/dashboard")
 def dashboard(authorization: AuthHeader = None):
     require_user(authorization)

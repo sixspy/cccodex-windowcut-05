@@ -17,7 +17,12 @@ router = APIRouter(tags=["windows"])
 def list_windows(authorization: AuthHeader = None):
     require_user(authorization)
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM windows ORDER BY id").fetchall()
+        rows = conn.execute(
+            """SELECT w.*, (
+                 SELECT COUNT(*) FROM reject_slips rs WHERE rs.window_name = w.name
+               ) AS reject_count
+               FROM windows w ORDER BY w.id"""
+        ).fetchall()
         return {"items": [dict(r) for r in rows]}
 
 
@@ -76,8 +81,13 @@ def get_window(wid: int, authorization: AuthHeader = None):
             "SELECT COUNT(*) c, COALESCE(SUM(amount),0) s FROM events WHERE window_id=? AND disposition='窗内'",
             (wid,),
         ).fetchone()
+        rejects = conn.execute(
+            "SELECT COUNT(*) c FROM reject_slips WHERE window_name=?",
+            (w["name"],),
+        ).fetchone()["c"]
         return {
             "window": dict(w),
             "in_window_count": ev["c"],
             "in_window_amount": ev["s"],
+            "rejects": rejects,
         }

@@ -133,6 +133,26 @@ CREATE TABLE IF NOT EXISTS reject_slips(
   reason TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS reject_drafts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  window_name TEXT NOT NULL,
+  biz_key TEXT NOT NULL,
+  event_ts TEXT NOT NULL,
+  amount REAL NOT NULL,
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL,
+  slip_id INTEGER,
+  created_at TEXT NOT NULL,
+  presented_at TEXT,
+  void_reason TEXT
+);
+CREATE TABLE IF NOT EXISTS reject_register(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  day TEXT UNIQUE NOT NULL,
+  path TEXT NOT NULL,
+  decided_by TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 """
 
 
@@ -250,11 +270,76 @@ def seed_if_empty(conn: sqlite3.Connection) -> None:
     )
 
 
+def repair_reject_orphans(conn: sqlite3.Connection, actor: str = "system") -> int:
+    """乙路径修复：events 里的拒收脏行（事件有凭证无）逐笔补出示后删除。
+
+    窗口归属从复现夹具 reject_orphans.json 的元数据取（events 表无此列，
+    这正是病灶）；定位不到窗口的脏行不伪造凭证，删除并审计留痕。
+    凭证有事件无在乙路径下是合法形态（事件表零改），不动。
+    """
+    from datetime import datetime
+
+    now = datetime.now().isoformat(timespec="seconds")
+    hints = {}
+    fixture = _load_fixture("reject_orphans.json") or {}
+    for e in fixture.get("orphan_events", []):
+        if e.get("window_name"):
+            hints[e["biz_key"]] = e["window_name"]
+    repaired = 0
+    rows = conn.execute(
+        "SELECT * FROM events WHERE disposition='拒收'"
+    ).fetchall()
+    for r in rows:
+        window_name = hints.get(r["biz_key"])
+        slip_id = None
+        draft_id = None
+        if window_name:
+            cur = conn.execute(
+                """INSERT INTO reject_drafts(window_name,biz_key,event_ts,amount,reason,status,created_at)
+                   VALUES (?,?,?,?,?,'草稿',?)""",
+                (window_name, r["biz_key"], r["event_ts"], r["amount"], "窗外且窗仍开启", now),
+            )
+            draft_id = cur.lastrowid
+            cur = conn.execute(
+                """INSERT INTO reject_slips(window_name,biz_key,event_ts,amount,reason,created_at)
+                   VALUES (?,?,?,?,?,?)""",
+                (window_name, r["biz_key"], r["event_ts"], r["amount"], "窗外且窗仍开启", now),
+            )
+            slip_id = cur.lastrowid
+            conn.execute(
+                "UPDATE reject_drafts SET status='已出示', slip_id=?, presented_at=? WHERE id=?",
+                (slip_id, now, draft_id),
+            )
+            write_audit(
+                conn,
+                actor,
+                "ingest_reject",
+                r["biz_key"],
+                {"repaired": True, "draft_id": draft_id, "slip_id": slip_id},
+            )
+        conn.execute("DELETE FROM events WHERE id=?", (r["id"],))
+        write_audit(
+            conn,
+            actor,
+            "reject_repair",
+            r["biz_key"],
+            {
+                "removed_event_id": r["id"],
+                "window_name": window_name,
+                "slip_id": slip_id,
+                "draft_id": draft_id,
+            },
+        )
+        repaired += 1
+    return repaired
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.executescript(SCHEMA)
         ensure_users(conn)
         seed_if_empty(conn)
+        repair_reject_orphans(conn)
         conn.commit()
 
 

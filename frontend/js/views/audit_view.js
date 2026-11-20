@@ -1,5 +1,21 @@
 export const auditViewTemplate = `
 <div class="card" v-show="tab===5">
+  <h2>拒收凭证</h2>
+  <p class="muted">窗外且窗仍开启的拒收，凭证整笔可查；事件表对拒收零改。</p>
+  <table>
+    <thead><tr><th>窗口</th><th>键</th><th>事件时间</th><th>金额</th><th>原因</th></tr></thead>
+    <tbody>
+      <tr v-for="s in rejects.slice(0,15)" :key="'s'+s.id">
+        <td>{{s.window_name}}</td>
+        <td>{{s.biz_key}}</td>
+        <td>{{s.event_ts}}</td>
+        <td>{{s.amount}}</td>
+        <td>{{s.reason}}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<div class="card" v-show="tab===5">
   <h2>审计流水</h2>
   <table>
     <thead><tr><th>时间</th><th>人</th><th>动作</th><th>目标</th></tr></thead>
